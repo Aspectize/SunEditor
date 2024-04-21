@@ -13,6 +13,9 @@ Aspectize.Extend('SunEditor', {
 
     Init: function (elem) {
 
+        var propOptionMap = { Mode: 'mode', Placeholder: 'placeholder', Language: 'lang', SpellCheck: 'spellcheck', Math: 'math' };
+
+        //#region readOnlyViewer EditMode === false
         var readOnlyViewer = document.createElement('div');
         readOnlyViewer.id = 'rov-' + elem.id;
         readOnlyViewer.style.width = '100%';
@@ -21,13 +24,10 @@ Aspectize.Extend('SunEditor', {
         readOnlyViewer.classList.add('se-wrapper-wysiwyg');
         readOnlyViewer.classList.add('sun-editor-editable');
 
-        var html = Aspectize.UiExtensions.GetProperty(elem, 'HtmlContent');
-        readOnlyViewer.innerHTML = html;
-
         elem.appendChild(readOnlyViewer);
+        //#endregion
 
-        function buildSunEditor(elem) {
-
+        function getSunEditor(elem) {
 
             if (!elem.aasSunEditor) {
 
@@ -95,16 +95,68 @@ Aspectize.Extend('SunEditor', {
             return elem.aasSunEditor;
         }
 
-        function setLanguage(lg) {
-            lg = lg.split('-')[0].toLowerCase();
-            editor.options.lang = SUNEDITOR_LANG[lg];
+        function setOption(property, value) {
+
+            var op = propOptionMap[property];
+            if (op) {
+                switch (op) {
+
+                    case 'mode': {
+                        var modes = {}
+                        if (value) { 
+                            if (value in { classic: 1, inline: 1, balloon: 1 }) {
+                                editor.options[op] = value;
+                            } else throw ('SunEditor bad value "' + value + '" for property Mode. Value can be "classic", "inline", or "balloon"');
+                        }
+                    } break;
+
+                    case 'math': {
+                        if (value) { // ToTest
+                            editor.options.katex = window.katex;
+                            editor.options.buttonList.push(op);
+                        }
+                    } break;
+
+                    case 'lang' : {
+                        var lg = value.split('-')[0].toLowerCase();
+                        editor.options[op] = SUNEDITOR_LANG[lg];
+                    } break;
+
+                    case 'spellcheck': {
+                      
+                        editor.options.frameAttrbutes[op] = !!value;
+                    } break;
+
+                    default: editor.options[op] = value; break;        
+                }
+            } 
         }
-        function setMath(enable) {
+     
+        function setHtmlContent(html) {
 
-            if (enable) {
+            var editor = getSunEditor(elem);
+            var eMode = Aspectize.UiExtensions.GetProperty(elem, 'EditMode');
 
-                editor.options.katex = window.katex;
-                editor.options.buttonList.push('math');
+            if (eMode) {
+
+                editor.setContents(html);
+            } else readOnlyViewer.innerHTML = html;
+        }
+        function changeEditMode(eMode) {
+
+            var currentVisibility = getComputedStyle(readOnlyViewer).display === 'none';
+            if (currentVisibility === eMode) return;
+
+            var editor = getSunEditor(elem);
+            if (eMode) {
+
+                editor.show();
+                readOnlyViewer.style.display = 'none';
+
+            } else {
+
+                editor.hide();
+                readOnlyViewer.style.display = 'block';
             }
         }
 
@@ -119,7 +171,7 @@ Aspectize.Extend('SunEditor', {
 
         function showEditor() {
 
-            var editor = buildSunEditor(elem);
+            var editor = getSunEditor(elem);
 
             editor.show();
             readOnlyViewer.style.display = 'none';
@@ -127,7 +179,7 @@ Aspectize.Extend('SunEditor', {
 
         function hideEditor() {
 
-            var editor = buildSunEditor(elem);
+            var editor = getSunEditor(elem);
 
             var html = editor.getContents();
             readOnlyViewer.innerHTML = html;
@@ -135,6 +187,8 @@ Aspectize.Extend('SunEditor', {
             readOnlyViewer.style.display = 'block';
 
         }
+
+        var editor = getSunEditor(elem);
 
         elem.aasControlInfo.ToggleEditMode = function () {
 
@@ -149,24 +203,21 @@ Aspectize.Extend('SunEditor', {
 
         };
 
-        //var lg = Aspectize.UiExtensions.GetProperty(elem, 'Language');
-        //setLanguage(lg);
-
         Aspectize.UiExtensions.AddMergedPropertyChangeObserver(elem, function (sender, arg) {
 
-            var editor = buildSunEditor(elem);
+            for (var key in arg) {
 
-            var htmlContent = arg.HtmlContent || '';
+                var value = arg[key];
+                switch (key) {
 
-            if ('EditMode' in arg) {
+                    case 'HtmlContent': setHtmlContent(value); break;
+                    case 'EditMode': changeEditMode(value); break;
 
-                var eMode = Aspectize.UiExtensions.GetProperty(elem, 'EditMode');
-
-                if (eMode) {
-
-                    showEditor();
-
-                } else hideEditor();
+                    case 'Mode':
+                    case 'Placeholder':
+                    case 'Language':
+                    case 'Math': setOption(key, value); break;
+                }
             }
         });
     }

@@ -1,5 +1,6 @@
-﻿/// <reference path="S:\Delivery\Aspectize.core\AspectizeIntellisense.js" />
+﻿/// <reference path="S:\Delivery\Aspectize.core\AspectizeIntellisenseLibrary.js" />
 
+//<!-- SunEditor -->
 //<link href="https://cdn.jsdelivr.net/npm/suneditor@latest/dist/css/suneditor.min.css" rel="stylesheet">
 //<script src="https://cdn.jsdelivr.net/npm/suneditor@latest/dist/suneditor.min.js"></script>
 //<!-- languages (Basic Language: English/en) -->
@@ -7,14 +8,26 @@
 
 
 Aspectize.Extend('SunEditor', {
-    Properties: { HtmlContent: '', EditMode: false, Placeholder: '', Mode: 'classic', Language: 'fr', SpellCheck: false, Math: false },
-    Events: ['OnHtmlContentChanged'],
-
+    //TinyMCE  Properties
+    //Properties: { EditMode: true, Value: '', CustomImage: '', CustomLink: '', RelativeUrls: false, Inline: false, MenuBar: false, StatusBar: false, WordCount: false, DisableIFrame: false, RemoveTrailingBrs: true },
+    Properties: {
+        EditMode: true, Value: '', Mode: 'classic', Language: 'fr', Placeholder: '',
+        SpellCheck: false, CloseOnSaveOrCancel:true,
+        FontColors: 'black, white, red, blue, green;navy, orange,yellow',
+        Buttons: 'undo,redo;removeFormat;bold,italic,underline,strike;subscript,superscript;font,fontSize,formatBlock,fontColor,hiliteColor,textStyle;outdent,indent;align,horizontalRule,list,lineHeight;table,link,image; showBlocks,codeView,print;paragraphStyle,blockquote;save, Cancel'
+        /*, Math: false */
+    },
+    Events: ['OnSave', 'OnCancel', 'OnStartEditing' /* 'OnCustomImage', 'OnCustomLink' */],
+    //'OnValueChanged',
 
     Init: function (elem) {
 
-        var propOptionMap = { Mode: 'mode', Placeholder: 'placeholder', Language: 'lang', SpellCheck: 'spellcheck', Math: 'math' };
-
+        var emptyContent = '<p><br></p>';
+        var propOptionMap = {
+            Mode: 'mode', Placeholder: 'placeholder', Language: 'lang',
+            SpellCheck: 'spellcheck', FontColors: 'colorList', Buttons: 'buttonList'
+            //Math: 'math'
+        };
         //#region readOnlyViewer EditMode === false
         var readOnlyViewer = document.createElement('div');
         readOnlyViewer.id = 'rov-' + elem.id;
@@ -27,17 +40,114 @@ Aspectize.Extend('SunEditor', {
         elem.appendChild(readOnlyViewer);
         //#endregion
 
+        function showEditor() {
+            
+            Aspectize.UiExtensions.Notify(elem, 'OnStartEditing', '');
+            var editor = getSunEditor(elem);
+
+            editor.show();
+            readOnlyViewer.style.display = 'none';
+            Aspectize.UiExtensions.ChangeProperty(elem, 'EditMode', true);
+
+        }
+        function hideEditor() {
+
+            var editor = getSunEditor(elem);
+
+            editor.hide();
+            readOnlyViewer.style.display = 'block';
+            Aspectize.UiExtensions.ChangeProperty(elem, 'EditMode', false);
+        }
+
+        function aasUploadFileAndGetItsUrl(files, info, core, onAfterUpload) {
+
+            //var cmdUrl = host.Url + host.ApplicationName + '/' + serviceCommand + '.bin.cmd.ashx' + (urlArgsString ? '?' + urlArgsString : '');
+
+            var app = Aspectize.App;
+
+            var uploadedFileParamName = 'f';
+            var uploadCommandName = '/WebHost/ABugTest/DataProvider.SaveImageForSunEditor.jsonx.cmd.ashx';
+
+            var file = files[0];
+            var formData = new FormData();
+            formData.append(uploadedFileParamName, file);
+
+            fetch(uploadCommandName, {
+                method: 'POST',
+                body: formData
+            }).then(function (response) { return response.json(); }).then(function (imageUrl) {
+
+                onAfterUpload({
+                    result: [{ url: imageUrl, name: file.name, size: file.size }]
+                });
+            })
+            //.catch(error => { console.error('Error:', error); });
+
+            // Prevent the default upload process
+            return false;
+        };
+        function getItemLists(sItems) {
+
+            sItems = sItems.replace(/\s*/g, '');
+
+            var itemLists = [];
+            var itemBlocks = sItems.split(';');
+            for (var n = 0; n < itemBlocks.length; n++) {
+
+                var items = itemBlocks[n].split(',');
+
+                itemLists.push(items);
+            }
+
+            return itemLists;
+        }
+        
+
+        function onChange(contents) {
+
+            if (contents === emptyContent) contents = '';
+
+            readOnlyViewer.innerHTML = contents;
+            Aspectize.UiExtensions.ChangeProperty(elem, 'Value', contents);
+        }
+
+        function getCancelPlugin(elem) {
+
+            var cancelPlugin = {
+                name: 'Cancel',
+                display: 'command',
+                buttonClass: '',
+                title: 'Cancel',
+                innerHTML: '<i class="fa-regular fa-rectangle-xmark" style="color:red;"></i>',
+                add: function (core, targetElement) {/* Initialize your button here. */ },
+                active: function (element) { },
+                action: function () {
+                    Aspectize.UiExtensions.Notify(elem, 'OnCancel', '');
+                    if (Aspectize.UiExtensions.GetProperty(elem, 'CloseOnSaveOrCancel')) hideEditor();
+                }
+            };
+
+            return cancelPlugin;
+        }
+
         function getSunEditor(elem) {
 
             if (!elem.aasSunEditor) {
 
-                var html = Aspectize.UiExtensions.GetProperty(elem, 'HtmlContent');
+                var html = Aspectize.UiExtensions.GetProperty(elem, 'Value');
                 var eMode = Aspectize.UiExtensions.GetProperty(elem, 'EditMode');
 
-                var config = {
+                var colors = Aspectize.UiExtensions.GetProperty(elem, 'FontColors');
+                var fontColors = getItemLists(colors);
 
+                var buttons = Aspectize.UiExtensions.GetProperty(elem, 'Buttons');
+                var buttonList = getItemLists(buttons);
+
+                var cancelPlugin = getCancelPlugin(elem);
+
+                var config = {
+                    plugins: [cancelPlugin],
                     mode: Aspectize.UiExtensions.GetProperty(elem, 'Mode'), // classic, inline, balloon
-                    "rtl": false,
                     lang: SUNEDITOR_LANG.fr,
                     frameAttrbutes: {
                         spellcheck: Aspectize.UiExtensions.GetProperty(elem, 'SpellCheck')
@@ -45,99 +155,94 @@ Aspectize.Extend('SunEditor', {
                     placeholder: Aspectize.UiExtensions.GetProperty(elem, 'Placeholder'),
 
                     width: "100%", height: "100%",
+
+                    colorList: fontColors,
+                    buttonList: buttonList,
+
                     // katex: window.katex,  // goes with math button 
-                    "colorList": [
-                        [
-                            "#ff0000",
-                            "#ff5e00",
-                            "#ffe400",
-                            "#abf200"
-                        ],
-                        [
-                            "#00d8ff",
-                            "#0055ff",
-                            "#6600ff",
-                            "#ff00dd"
-                        ]
-                    ],
-                    //"imageGalleryUrl": "https://etyswjpn79.execute-api.ap-northeast-1.amazonaws.com/suneditor-demo", // goes with imageGallery button 
-                    "videoFileInput": false,
-                    "tabDisable": false,
+                    //imageGalleryUrl: "https://etyswjpn79.execute-api.ap-northeast-1.amazonaws.com/suneditor-demo", // goes with imageGallery button 
+                    videoFileInput: false,
+                    tabDisable: false,
+                    rtl: false
+              };
 
-                    buttonList: [
-                            ['undo', 'redo'],
-                            ['font', 'fontSize', 'formatBlock'],
-                            ['bold', 'underline', 'italic', 'strike', 'subscript', 'superscript'],
-                            ['removeFormat'],
-                            ['outdent', 'indent'],
-                            ['align', 'horizontalRule', 'list', 'lineHeight'],
-                            ['table', 'link', 'image' /*, 'video', 'audio', */],
-                            ['fullScreen', 'showBlocks', 'codeView', 'preview', 'print', 'save', 'template'],
-                            //['math', 'imageGallery'],
-                            ["paragraphStyle", "blockquote", "fontColor", "hiliteColor", "textStyle", "table", "link", "image"]
-                    ]
-
-                };
-
-                if (!eMode) readOnlyViewer.innerHTML = html;
-
+                readOnlyViewer.innerHTML = html;
                 elem.aasSunEditor = SUNEDITOR.create(readOnlyViewer, config);
 
-                if (!eMode) {
-                    elem.aasSunEditor.hide();
-                    readOnlyViewer.style.display = 'block';
-                }
+                if (eMode) {
+                    Aspectize.UiExtensions.Notify(elem, 'OnStartEditing', '');
+                } else hideEditor();
 
                 var input = elem.querySelector('input');
                 if (input) input.style.display = 'none';
             }
 
+            elem.aasSunEditor.onChange = onChange;
+            elem.aasSunEditor.onSave = function () {
+                Aspectize.UiExtensions.Notify(elem, 'OnSave', '');
+                if (Aspectize.UiExtensions.GetProperty(elem, 'CloseOnSaveOrCancel')) hideEditor();
+            }
+            elem.aasSunEditor.onImageUploadBefore = aasUploadFileAndGetItsUrl;
+
             return elem.aasSunEditor;
         }
 
-        function setOption(property, value) {
+        function setOptions(options) {
 
-            var op = propOptionMap[property];
-            if (op) {
+            var eMode = Aspectize.UiExtensions.GetProperty(elem, 'EditMode');
+            var editor = getSunEditor(elem);
+
+            var edOptions = {};
+            //#region validate and build editor options
+            for (var op in options) {
+                var value = options[op];
                 switch (op) {
 
                     case 'mode': {
                         var modes = {}
-                        if (value) { 
+                        if (value) {
                             if (value in { classic: 1, inline: 1, balloon: 1 }) {
-                                editor.options[op] = value;
+                                edOptions[op] = value;
                             } else throw ('SunEditor bad value "' + value + '" for property Mode. Value can be "classic", "inline", or "balloon"');
                         }
                     } break;
 
                     case 'math': {
-                        if (value) { // ToTest
-                            editor.options.katex = window.katex;
-                            editor.options.buttonList.push(op);
+                        if (value) { // TODO and Test
+                            //editor.options.katex = window.katex;
+                            //editor.options.buttonList.push(op);
                         }
                     } break;
 
-                    case 'lang' : {
+                    case 'lang': {
                         var lg = value.split('-')[0].toLowerCase();
-                        editor.options[op] = SUNEDITOR_LANG[lg];
+                        edOptions[op] = SUNEDITOR_LANG[lg];
                     } break;
 
                     case 'spellcheck': {
-                      
-                        editor.options.frameAttrbutes[op] = !!value;
+                        edOptions.frameAttrbutes[op] = !!value;
                     } break;
 
-                    default: editor.options[op] = value; break;        
+                    case 'buttonList':
+                    case 'colorList': {
+                        edOptions[op] = getItemLists(value);
+                    } break;
+
+                    default: edOptions[op] = value; break;
                 }
-            } 
+            }
+            //#endregion 
+
+            editor.setOptions(edOptions);
+            if (!eMode) hideEditor();
         }
-     
+
         function setHtmlContent(html) {
 
-            var editor = getSunEditor(elem);
             var eMode = Aspectize.UiExtensions.GetProperty(elem, 'EditMode');
 
             if (eMode) {
+                var editor = getSunEditor(elem);
 
                 editor.setContents(html);
             } else readOnlyViewer.innerHTML = html;
@@ -147,48 +252,12 @@ Aspectize.Extend('SunEditor', {
             var currentVisibility = getComputedStyle(readOnlyViewer).display === 'none';
             if (currentVisibility === eMode) return;
 
-            var editor = getSunEditor(elem);
             if (eMode) {
 
-                editor.show();
-                readOnlyViewer.style.display = 'none';
+                showEditor();
 
-            } else {
-
-                editor.hide();
-                readOnlyViewer.style.display = 'block';
-            }
+            } else hideEditor();
         }
-
-        function addTemplate(name, html) {
-
-            editor.options.templates.push({ 'name': name, 'html': html });
-
-            if (editor.options.templates.length === 1) {
-                editor.options.buttonList.push('template');
-            }
-        }
-
-        function showEditor() {
-
-            var editor = getSunEditor(elem);
-
-            editor.show();
-            readOnlyViewer.style.display = 'none';
-        }
-
-        function hideEditor() {
-
-            var editor = getSunEditor(elem);
-
-            var html = editor.getContents();
-            readOnlyViewer.innerHTML = html;
-            editor.hide();
-            readOnlyViewer.style.display = 'block';
-
-        }
-
-        var editor = getSunEditor(elem);
 
         elem.aasControlInfo.ToggleEditMode = function () {
 
@@ -205,20 +274,32 @@ Aspectize.Extend('SunEditor', {
 
         Aspectize.UiExtensions.AddMergedPropertyChangeObserver(elem, function (sender, arg) {
 
+            var options = null;
+            var eMode = null;
+            var html = null;
             for (var key in arg) {
 
                 var value = arg[key];
                 switch (key) {
 
-                    case 'HtmlContent': setHtmlContent(value); break;
-                    case 'EditMode': changeEditMode(value); break;
+                    case 'Value': html = value; break;
+                    case 'EditMode': eMode = value; break;
 
                     case 'Mode':
                     case 'Placeholder':
                     case 'Language':
-                    case 'Math': setOption(key, value); break;
+                    case 'Math':
+                        if (!options) options = {};
+                        var op = propOptionMap[key];
+                        options[op] = value;
+                        break;
                 }
             }
+
+            if (options) setOptions(options);
+
+            if (eMode !== null) changeEditMode(eMode);
+            if (html !== null) setHtmlContent(html);
         });
     }
 });

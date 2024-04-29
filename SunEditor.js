@@ -12,12 +12,13 @@ Aspectize.Extend('SunEditor', {
     //Properties: { EditMode: true, Value: '', CustomImage: '', CustomLink: '', RelativeUrls: false, Inline: false, MenuBar: false, StatusBar: false, WordCount: false, DisableIFrame: false, RemoveTrailingBrs: true },
     Properties: {
         EditMode: true, Value: '', Mode: 'classic', Language: 'fr', Placeholder: '',
-        SpellCheck: false, CloseOnSaveOrCancel:true,
+        SpellCheck: false, CloseOnSaveOrCancel: true,
+        CustomImageUrl: '', ImageToUpload: null, MaxImageSize:300000,
         FontColors: 'black, white, red, blue, green;navy, orange,yellow',
-        Buttons: 'undo,redo;removeFormat;bold,italic,underline,strike;subscript,superscript;font,fontSize,formatBlock,fontColor,hiliteColor,textStyle;outdent,indent;align,horizontalRule,list,lineHeight;table,link,image; showBlocks,codeView,print;paragraphStyle,blockquote;save, Cancel'
+        Buttons: 'undo,redo;removeFormat;bold,italic,underline,strike;subscript,superscript;font,fontSize,formatBlock,fontColor,hiliteColor,textStyle;outdent,indent;align,horizontalRule,list,lineHeight;table,link,Image; showBlocks,codeView,print;paragraphStyle,blockquote;save, Cancel'
         /*, Math: false */
     },
-    Events: ['OnSave', 'OnCancel', 'OnStartEditing' /* 'OnCustomImage', 'OnCustomLink' */],
+    Events: ['OnEditModeChanged', 'OnSave', 'OnCancel', 'OnStartEditing', 'OnCustomImage'],
     //'OnValueChanged',
 
     Init: function (elem) {
@@ -40,9 +41,15 @@ Aspectize.Extend('SunEditor', {
         elem.appendChild(readOnlyViewer);
         //#endregion
 
+        var started = false;
+
         function showEditor() {
-            
-            Aspectize.UiExtensions.Notify(elem, 'OnStartEditing', '');
+
+            if (!started) {
+                Aspectize.UiExtensions.Notify(elem, 'OnStartEditing', '');
+                started = true;
+            }
+
             var editor = getSunEditor(elem);
 
             editor.show();
@@ -52,6 +59,11 @@ Aspectize.Extend('SunEditor', {
         }
         function hideEditor() {
 
+            if (started) {
+                Aspectize.UiExtensions.Notify(elem, 'OnCancel', '');
+                started = false;
+            }
+
             var editor = getSunEditor(elem);
 
             editor.hide();
@@ -59,33 +71,13 @@ Aspectize.Extend('SunEditor', {
             Aspectize.UiExtensions.ChangeProperty(elem, 'EditMode', false);
         }
 
-        function aasUploadFileAndGetItsUrl(files, info, core, onAfterUpload) {
+        function setCustomImageUrl(url) {
 
-            //var cmdUrl = host.Url + host.ApplicationName + '/' + serviceCommand + '.bin.cmd.ashx' + (urlArgsString ? '?' + urlArgsString : '');
+            var editor = getSunEditor(elem);
+            var htmlImg = '<img src="' + url + '">';
+            editor.insertHTML(htmlImg, true, true);
+        }
 
-            var app = Aspectize.App;
-
-            var uploadedFileParamName = 'f';
-            var uploadCommandName = '/WebHost/ABugTest/DataProvider.SaveImageForSunEditor.jsonx.cmd.ashx';
-
-            var file = files[0];
-            var formData = new FormData();
-            formData.append(uploadedFileParamName, file);
-
-            fetch(uploadCommandName, {
-                method: 'POST',
-                body: formData
-            }).then(function (response) { return response.json(); }).then(function (imageUrl) {
-
-                onAfterUpload({
-                    result: [{ url: imageUrl, name: file.name, size: file.size }]
-                });
-            })
-            //.catch(error => { console.error('Error:', error); });
-
-            // Prevent the default upload process
-            return false;
-        };
         function getItemLists(sItems) {
 
             sItems = sItems.replace(/\s*/g, '');
@@ -101,7 +93,7 @@ Aspectize.Extend('SunEditor', {
 
             return itemLists;
         }
-        
+
 
         function onChange(contents) {
 
@@ -122,12 +114,47 @@ Aspectize.Extend('SunEditor', {
                 add: function (core, targetElement) {/* Initialize your button here. */ },
                 active: function (element) { },
                 action: function () {
+
                     Aspectize.UiExtensions.Notify(elem, 'OnCancel', '');
                     if (Aspectize.UiExtensions.GetProperty(elem, 'CloseOnSaveOrCancel')) hideEditor();
                 }
             };
 
             return cancelPlugin;
+        }
+
+        function getImagePlugin(elem) {
+
+            var imagePlugin = {
+                name: 'Image',
+                display: 'command',
+                buttonClass: '',
+                title: 'Image',
+                innerHTML: '<i class="fa-regular fa-image"></i>',
+                add: function (core, targetElement) {/* Initialize your button here. */ },
+                active: function (element) { },
+                action: function () {
+
+                    var maxSize = Aspectize.UiExtensions.GetProperty(elem, 'MaxImageSize')
+                    var sys = Aspectize.GetService('SystemServices');
+                    var chosen = sys.ChooseFile('image/*', false);
+
+                    chosen.then(function (files) {
+
+                        var obj = { aasUploadFileArg: true, aasFileUploadControl: elem, Files: files };
+                        Aspectize.UiExtensions.ChangeProperty(elem, 'ImageToUpload', obj);
+                        Aspectize.UiExtensions.Notify(elem, 'OnCustomImage', obj);
+
+                        var file = files[0];
+
+                        //var editor = elem.aasSunEditor;
+                        //editor.insert;
+                    });
+
+                }
+            };
+
+            return imagePlugin;
         }
 
         function getSunEditor(elem) {
@@ -144,9 +171,9 @@ Aspectize.Extend('SunEditor', {
                 var buttonList = getItemLists(buttons);
 
                 var cancelPlugin = getCancelPlugin(elem);
-
+                var imagePlugin = getImagePlugin(elem);
                 var config = {
-                    plugins: [cancelPlugin],
+                    plugins: [cancelPlugin, imagePlugin],
                     mode: Aspectize.UiExtensions.GetProperty(elem, 'Mode'), // classic, inline, balloon
                     lang: SUNEDITOR_LANG.fr,
                     frameAttrbutes: {
@@ -164,13 +191,13 @@ Aspectize.Extend('SunEditor', {
                     videoFileInput: false,
                     tabDisable: false,
                     rtl: false
-              };
+                };
 
                 readOnlyViewer.innerHTML = html;
                 elem.aasSunEditor = SUNEDITOR.create(readOnlyViewer, config);
 
                 if (eMode) {
-                    Aspectize.UiExtensions.Notify(elem, 'OnStartEditing', '');
+                    showEditor();
                 } else hideEditor();
 
                 var input = elem.querySelector('input');
@@ -182,8 +209,6 @@ Aspectize.Extend('SunEditor', {
                 Aspectize.UiExtensions.Notify(elem, 'OnSave', '');
                 if (Aspectize.UiExtensions.GetProperty(elem, 'CloseOnSaveOrCancel')) hideEditor();
             }
-            elem.aasSunEditor.onImageUploadBefore = aasUploadFileAndGetItsUrl;
-
             return elem.aasSunEditor;
         }
 
@@ -277,6 +302,7 @@ Aspectize.Extend('SunEditor', {
             var options = null;
             var eMode = null;
             var html = null;
+            var customImageUrl = null;
             for (var key in arg) {
 
                 var value = arg[key];
@@ -284,6 +310,7 @@ Aspectize.Extend('SunEditor', {
 
                     case 'Value': html = value; break;
                     case 'EditMode': eMode = value; break;
+                    case 'CustomImageUrl': customImageUrl = value;
 
                     case 'Mode':
                     case 'Placeholder':
@@ -295,6 +322,8 @@ Aspectize.Extend('SunEditor', {
                         break;
                 }
             }
+
+            if (customImageUrl) setCustomImageUrl(customImageUrl);
 
             if (options) setOptions(options);
 

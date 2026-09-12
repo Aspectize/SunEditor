@@ -185,7 +185,7 @@ Aspectize.Extend('SunEditor', {
 
                     colorList: fontColors,
                     buttonList: buttonList,
-
+                    linkProtocol:'',
                     // katex: window.katex,  // goes with math button 
                     //imageGalleryUrl: "https://etyswjpn79.execute-api.ap-northeast-1.amazonaws.com/suneditor-demo", // goes with imageGallery button 
                     videoFileInput: false,

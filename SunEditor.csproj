@@ -58,6 +58,7 @@
   <ItemGroup>
     <Content Include="Scripts\_references.js" />
     <Content Include="SunEditor.js" />
+    <Content Include="SunEditor3-Claude.js" />
   </ItemGroup>
   <ItemGroup>
     <BootstrapperPackage Include=".NETFramework,Version=v4.5.2">

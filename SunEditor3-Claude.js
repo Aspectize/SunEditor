@@ -1,23 +1,25 @@
 ﻿/// <reference path="S:\Delivery\Aspectize.core\AspectizeIntellisenseLibrary.js" />
 
-//<!-- SunEditor v3 (tested against 3.3.3) -->
+//<!-- SunEditor v3 (tested against 3.3.3) - pin the version, "@latest" is what broke the v2 integration -->
+//<!-- v3 dist layout has no "css" folder anymore: the two stylesheets sit next to suneditor.min.js -->
 //<link href="https://cdn.jsdelivr.net/npm/suneditor@3.3.3/dist/suneditor.min.css" rel="stylesheet">
 //<link href="https://cdn.jsdelivr.net/npm/suneditor@3.3.3/dist/suneditor-contents.min.css" rel="stylesheet">
 //<script src="https://cdn.jsdelivr.net/npm/suneditor@3.3.3/dist/suneditor.min.js"></script>
+//<!-- languages (Basic Language: English/en) - note: folder is now "langs" -->
 //<script src="https://cdn.jsdelivr.net/npm/suneditor@3.3.3/src/langs/fr.js"></script>
 
 // All Buttons : 
-//undo,redo,newDocument;removeFormat,copyFormat;bold,italic,underline,strike;subscript,superscript;font,fontSize,blockStyle,fontColor,backgroundColor,textStyle;outdent,indent;align,hr,list,list_bulleted,list_numbered,lineHeight;table,link,Image,image,video,audio,embed,drawing,fileUpload;codeBlock,blockquote,paragraphStyle,template,layout;finder,selectAll,pageBreak;showBlocks,codeView,markdownView,preview,print,fullScreen,exportPDF;save,Cancel
-//
+// undo,redo,newDocument;removeFormat,copyFormat;bold,italic,underline,strike;subscript,superscript;font,fontSize,blockStyle,fontColor,backgroundColor,textStyle;outdent,indent;align,hr,list,list_bulleted,list_numbered,lineHeight;table,link,Image,image,video,audio,embed,drawing,fileUpload;codeBlock,blockquote,paragraphStyle,template,layout;finder,selectAll,pageBreak;showBlocks,codeView,markdownView,preview,print,fullScreen,exportPDF;save,Cancel
+
 Aspectize.Extend('SunEditor', {
     Properties: {
         EditMode: true, Value: '', Mode: 'classic', Language: 'fr', Placeholder: '',
         SpellCheck: false, CloseOnSaveOrCancel: true,
         CustomImageUrl: '', ImageToUpload: null, MaxImageSize: 300000,
         FontColors: 'black, white, red, blue, green;navy, orange,yellow',
-        //Buttons: 'undo,redo;removeFormat;bold,italic,underline,strike;subscript,superscript;font,fontSize,formatBlock,fontColor,hiliteColor,textStyle;outdent,indent;align,horizontalRule,list,lineHeight;table,link,Image; showBlocks,codeView,print;paragraphStyle,blockquote;save, Cancel',
-        Buttons:'undo,redo,newDocument;removeFormat,copyFormat;bold,italic,underline,strike;subscript,superscript;font,fontSize,blockStyle,fontColor,backgroundColor,textStyle;outdent,indent;align,hr,list,list_bulleted,list_numbered,lineHeight;table,link,Image,image,video,audio,embed,drawing,fileUpload;codeBlock,blockquote,paragraphStyle,template,layout;finder,selectAll,pageBreak;showBlocks,codeView,markdownView,preview,print,fullScreen,exportPDF;save,Cancel',
-        Fonts: ''
+        Fonts: '',
+        Options: '', // JSON, merged into the SunEditor config (experiments / rarely used options)
+        Buttons: 'undo,redo;removeFormat;bold,italic,underline,strike;subscript,superscript;font,fontSize,blockStyle,fontColor,backgroundColor,textStyle;outdent,indent;align,hr,list,lineHeight;table,link,Image; showBlocks,codeView,print;paragraphStyle,blockquote;save, Cancel'
         /*, Math: false */
     },
     Events: ['OnEditModeChanged', 'OnSave', 'OnCancel', 'OnStartEditing', 'OnCustomImage'],
@@ -25,14 +27,16 @@ Aspectize.Extend('SunEditor', {
 
     Init: function (elem) {
 
+        if ((typeof SUNEDITOR === 'undefined') || !SUNEDITOR.plugins) throw ('SunEditor: SUNEDITOR is undefined, the loaded suneditor.min.js is not a v3 script (a v2 copy is probably loaded before it)');
+
         var emptyContent = '<p><br></p>';
         var propOptionMap = {
             Mode: 'mode', Placeholder: 'placeholder', Language: 'lang',
-            SpellCheck: 'spellcheck', FontColors: 'colorList', Buttons: 'buttonList', Fonts: 'fontList'
+            SpellCheck: 'spellcheck', FontColors: 'colorList', Buttons: 'buttonList', Fonts: 'fontList', Options: 'extraOptions'
             //Math: 'math'
         };
         // v3: these options can not be changed with resetOptions, the editor must be recreated
-        var recreateOptions = { mode: 1, lang: 1, buttonList: 1, colorList: 1, fontList: 1 };
+        var recreateOptions = { mode: 1, lang: 1, buttonList: 1, colorList: 1, fontList: 1, extraOptions: 1 };
 
         // v2 button names still accepted in the Buttons property
         var buttonNameMap = { formatBlock: 'blockStyle', hiliteColor: 'backgroundColor', horizontalRule: 'hr' };
@@ -65,14 +69,19 @@ Aspectize.Extend('SunEditor', {
             Aspectize.UiExtensions.ChangeProperty(elem, 'EditMode', true);
 
         }
-        function hideEditor() {
+        function hideEditor(notifyCancel) {
 
-            if (started) {
+            if (notifyCancel && started) {
                 Aspectize.UiExtensions.Notify(elem, 'OnCancel', '');
-                started = false;
             }
 
+            started = false;
+            
             var editor = getSunEditor(elem);
+
+            var html = Aspectize.UiExtensions.GetProperty(elem, 'Value');
+            editor.$.html.set(html);
+            readOnlyViewer.innerHTML = html;
 
             editor.$.ui.hide();
             readOnlyViewer.style.display = 'block';
@@ -141,27 +150,42 @@ Aspectize.Extend('SunEditor', {
             return fontOptions;
         }
 
+        function getExtraOptions(sOptions) {
+
+            var extraOptions = {};
+            if (sOptions) {
+                try {
+                    extraOptions = JSON.parse(sOptions);
+                } catch (ex) { throw ('SunEditor bad JSON in property Options: ' + ex.message); }
+            }
+
+            return extraOptions;
+        }
+
         // v3: a toolbar button only exists if its plugin is registered
-        function getBuiltInPlugins(buttonList) {
+        // plugins are taken from the button names and from the keys of the Options JSON (slashCommand, autocomplete, ...)
+        function getBuiltInPlugins(buttonList, extraOptions) {
 
             var plugins = [];
             var added = {};
 
-            for (var n = 0; n < buttonList.length; n++) {
-                var items = buttonList[n];
-                for (var i = 0; i < items.length; i++) {
-                    var name = items[i];
-                    var plugin = SUNEDITOR.plugins[name];
-                    if (plugin && !added[name]) {
-                        plugins.push(plugin);
-                        added[name] = true;
-                    }
+            function addPlugin(name) {
+                var plugin = SUNEDITOR.plugins[name];
+                if (plugin && !added[name]) {
+                    plugins.push(plugin);
+                    added[name] = true;
                 }
             }
 
+            for (var n = 0; n < buttonList.length; n++) {
+                var items = buttonList[n];
+                for (var i = 0; i < items.length; i++) addPlugin(items[i]);
+            }
+
+            for (var key in extraOptions) addPlugin(key);
+
             return plugins;
         }
-
 
         function onChange(contents) {
 
@@ -193,11 +217,10 @@ Aspectize.Extend('SunEditor', {
 
         function getCancelPlugin(elem) {
 
-            var cancelPlugin = createCommandPlugin('Cancel', 'Cancel', '<i class="fa-regular fa-rectangle-xmark" style="color:red;"></i>',
+            var cancelPlugin = createCommandPlugin('Cancel', 'Cancel', 'cancel',
                 function (target) {
 
-                    Aspectize.UiExtensions.Notify(elem, 'OnCancel', '');
-                    if (Aspectize.UiExtensions.GetProperty(elem, 'CloseOnSaveOrCancel')) hideEditor();
+                    if (Aspectize.UiExtensions.GetProperty(elem, 'CloseOnSaveOrCancel')) hideEditor(true);
                 });
 
             return cancelPlugin;
@@ -205,7 +228,7 @@ Aspectize.Extend('SunEditor', {
 
         function getImagePlugin(elem) {
 
-            var imagePlugin = createCommandPlugin('Image', 'Image', '<i class="fa-regular fa-image"></i>',
+            var imagePlugin = createCommandPlugin('Image', 'Image', 'image',
                 function (target) {
 
                     var maxSize = Aspectize.UiExtensions.GetProperty(elem, 'MaxImageSize');
@@ -250,9 +273,11 @@ Aspectize.Extend('SunEditor', {
                 var buttons = Aspectize.UiExtensions.GetProperty(elem, 'Buttons');
                 var buttonList = getButtonList(buttons);
 
+                var extraOptions = getExtraOptions(Aspectize.UiExtensions.GetProperty(elem, 'Options'));
+
                 var cancelPlugin = getCancelPlugin(elem);
                 var imagePlugin = getImagePlugin(elem);
-                var plugins = [cancelPlugin, imagePlugin].concat(getBuiltInPlugins(buttonList));
+                var plugins = [cancelPlugin, imagePlugin].concat(getBuiltInPlugins(buttonList, extraOptions));
 
                 var config = {
                     plugins: plugins,
@@ -279,20 +304,28 @@ Aspectize.Extend('SunEditor', {
                         onChange: function (e) { onChange(e.data); },
                         onSave: function (e) {
                             Aspectize.UiExtensions.Notify(elem, 'OnSave', '');
-                            if (Aspectize.UiExtensions.GetProperty(elem, 'CloseOnSaveOrCancel')) hideEditor();
+                            if (Aspectize.UiExtensions.GetProperty(elem, 'CloseOnSaveOrCancel')) hideEditor(false);
                         }
                     }
                 };
+
+                for (var op in extraOptions) config[op] = extraOptions[op];
 
                 readOnlyViewer.innerHTML = html;
                 elem.aasSunEditor = SUNEDITOR.create(readOnlyViewer, config);
 
                 if (eMode) {
                     showEditor();
-                } else hideEditor();
+                } else hideEditor(true);
 
-                var input = elem.querySelector('input');
-                if (input) input.style.display = 'none';
+                //var input = elem.querySelector('input');
+                //if (input) input.style.display = 'none';
+                // v3 toolbar has its own inputs (fontSize): only hide inputs that are not part of the editor
+                //var inputs = elem.querySelectorAll('input');
+                //for (var n = 0; n < inputs.length; n++) {
+                //    var input = inputs[n];
+                //    if (!input.closest('.sun-editor')) input.style.display = 'none';
+                //}
             }
 
             return elem.aasSunEditor;
@@ -361,6 +394,10 @@ Aspectize.Extend('SunEditor', {
                         edOptions.font = getFontOptions(value);
                     } break;
 
+                    case 'extraOptions': {
+                        getExtraOptions(value); // validate JSON, editor is recreated anyway
+                    } break;
+
                     default: edOptions[op] = value; break;
                 }
             }
@@ -371,20 +408,18 @@ Aspectize.Extend('SunEditor', {
                 recreateSunEditor();
             } else {
                 editor.resetOptions(edOptions);
-                if (!eMode) hideEditor();
+                if (!eMode) hideEditor(true);
             }
         }
 
         function setHtmlContent(html) {
 
-            var eMode = Aspectize.UiExtensions.GetProperty(elem, 'EditMode');
+            var editor = getSunEditor(elem);
 
-            if (eMode) {
-                var editor = getSunEditor(elem);
-
-                editor.$.html.set(html);
-            } else readOnlyViewer.innerHTML = html;
+            editor.$.html.set(html);
+            readOnlyViewer.innerHTML = html;
         }
+
         function changeEditMode(eMode) {
 
             var currentVisibility = getComputedStyle(readOnlyViewer).display === 'none';
@@ -394,7 +429,10 @@ Aspectize.Extend('SunEditor', {
 
                 showEditor();
 
-            } else hideEditor();
+            } else {
+
+                hideEditor(true);
+            }
         }
 
         elem.aasControlInfo.ToggleEditMode = function () {
@@ -406,7 +444,7 @@ Aspectize.Extend('SunEditor', {
 
                 showEditor();
 
-            } else hideEditor();
+            } else hideEditor(true);
 
         };
 
@@ -431,6 +469,7 @@ Aspectize.Extend('SunEditor', {
                     case 'SpellCheck':
                     case 'FontColors':
                     case 'Fonts':
+                    case 'Options':
                     case 'Buttons':
                     case 'Math':
                         if (!options) options = {};

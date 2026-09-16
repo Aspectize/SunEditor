@@ -9,21 +9,27 @@
 //<script src="https://cdn.jsdelivr.net/npm/suneditor@3.3.3/src/langs/fr.js"></script>
 
 // All Buttons : 
-// undo,redo,newDocument;removeFormat,copyFormat;bold,italic,underline,strike;subscript,superscript;font,fontSize,blockStyle,fontColor,backgroundColor,textStyle;outdent,indent;align,hr,list,list_bulleted,list_numbered,lineHeight;table,link,Image,image,video,audio,embed,drawing,fileUpload;codeBlock,blockquote,paragraphStyle,template,layout;finder,selectAll,pageBreak;showBlocks,codeView,markdownView,preview,print,fullScreen,exportPDF;save,Cancel
+// undo,redo,newDocument;removeFormat,copyFormat;bold,italic,underline,strike;subscript,superscript;font,fontSize,blockStyle,fontColor,backgroundColor,textStyle;outdent,indent;align,hr,list,list_bulleted,list_numbered,lineHeight;table,Link,link,Image,image,video,audio,embed,drawing,fileUpload;codeBlock,blockquote,paragraphStyle,template,layout;finder,selectAll,pageBreak;showBlocks,codeView,markdownView,preview,print,fullScreen,exportPDF;save,Cancel
+
+var globalLabels = {
+
+    fr: ['Mots:', 'Caractères:', 'Lien'],
+    en: ['Words:', 'Characters:', 'Link']
+};
+
 
 Aspectize.Extend('SunEditor', {
     Properties: {
         EditMode: true, Value: '', Mode: 'classic', Language: 'fr', Placeholder: '',
         SpellCheck: false, CloseOnSaveOrCancel: true,
-        CustomImageUrl: '', ImageToUpload: null, MaxImageSize: 300000,
+        MaxImageSize: 300000,
         FontColors: 'black, white, red, blue, green;navy, orange,yellow',
         Fonts: '',
         Options: '', // JSON, merged into the SunEditor config (experiments / rarely used options)
-        Buttons: 'undo,redo;removeFormat;bold,italic,underline,strike;subscript,superscript;font,fontSize,blockStyle,fontColor,backgroundColor,textStyle;outdent,indent;align,hr,list,lineHeight;table,link,Image; showBlocks,codeView,print;paragraphStyle,blockquote;save, Cancel'
+        Buttons: 'undo,redo;removeFormat,copyFormat;finder;bold,italic,underline,strike;subscript,superscript;font,fontSize,blockStyle,fontColor,backgroundColor,textStyle;outdent,indent;align,hr,list_bulleted,list_numbered,lineHeight;table,Link,link,Image;image; showBlocks,codeView,print;paragraphStyle,blockquote;save, Cancel'
         /*, Math: false */
     },
-    Events: ['OnEditModeChanged', 'OnSave', 'OnCancel', 'OnStartEditing', 'OnCustomImage'],
-    //'OnValueChanged',
+    Events: ['OnEditModeChanged', 'OnSave', 'OnCancel', 'OnStartEditing', 'OnCustomImage', 'OnCustomLink'],
 
     Init: function (elem) {
 
@@ -54,6 +60,8 @@ Aspectize.Extend('SunEditor', {
         //#endregion
 
         var started = false;
+        var lastLinkText = 'Lien';
+        var lastSelectedText = '';
 
         function showEditor() {
 
@@ -76,7 +84,7 @@ Aspectize.Extend('SunEditor', {
             }
 
             started = false;
-            
+
             var editor = getSunEditor(elem);
 
             var html = Aspectize.UiExtensions.GetProperty(elem, 'Value');
@@ -93,6 +101,13 @@ Aspectize.Extend('SunEditor', {
             var editor = getSunEditor(elem);
             var htmlImg = '<img src="' + url + '">';
             editor.$.html.insert(htmlImg);
+        }
+
+        function setCustomLinkUrl(url, text) {
+
+            var editor = getSunEditor(elem);
+            var htmlLink = '<a target="_blank" href="' + url + '">' + text + '</a>';
+            editor.$.html.insert(htmlLink);
         }
 
         function getItemLists(sItems) {
@@ -217,7 +232,7 @@ Aspectize.Extend('SunEditor', {
 
         function getCancelPlugin(elem) {
 
-            var cancelPlugin = createCommandPlugin('Cancel', 'Cancel', 'cancel',
+            var cancelPlugin = createCommandPlugin('Cancel', 'cancel', 'cancel',
                 function (target) {
 
                     if (Aspectize.UiExtensions.GetProperty(elem, 'CloseOnSaveOrCancel')) hideEditor(true);
@@ -228,7 +243,7 @@ Aspectize.Extend('SunEditor', {
 
         function getImagePlugin(elem) {
 
-            var imagePlugin = createCommandPlugin('Image', 'Image', 'image',
+            var imagePlugin = createCommandPlugin('Image', 'image', 'image',
                 function (target) {
 
                     var maxSize = Aspectize.UiExtensions.GetProperty(elem, 'MaxImageSize');
@@ -237,26 +252,55 @@ Aspectize.Extend('SunEditor', {
 
                     chosen.then(function (files) {
 
-                        var obj = { aasUploadFileArg: true, aasFileUploadControl: elem, Files: files };
-                        Aspectize.UiExtensions.ChangeProperty(elem, 'ImageToUpload', obj);
-                        Aspectize.UiExtensions.Notify(elem, 'OnCustomImage', obj);
+                        if (files.length === 1) {
 
-                        var file = files[0];
-
-                        // the image is inserted when CustomImageUrl is set (see setCustomImageUrl)
+                            var obj = { File: files[0], Url: null };
+                            Aspectize.UiExtensions.Notify(elem, 'OnCustomImage', obj);
+                        }
                     });
                 });
 
             return imagePlugin;
         }
+
+        function getLinkPlugin(elem) {
+
+            var linkPlugin = createCommandPlugin('Link', 'link', 'link',
+                function (target) {
+                    // captured now: the selection is gone once the file dialog opens
+                    lastSelectedText = this.$.selection.getRange().toString();
+
+                    var sys = Aspectize.GetService('SystemServices');
+                    var chosen = sys.ChooseFile('*/*', false);
+
+                    chosen.then(function (files) {
+
+                        if (files.length === 1) {
+
+                            var obj = { File: files[0], Url: null };
+                            lastLinkText = files[0].name;
+                            Aspectize.UiExtensions.Notify(elem, 'OnCustomLink', obj);
+                        }
+                    });
+                });
+
+            return linkPlugin;
+        }
+
         //#endregion
 
         function getLang(language) {
 
             var lg = (language || 'en').split('-')[0].toLowerCase();
-            return SUNEDITOR_LANG[lg] || SUNEDITOR_LANG.en;
+            return SUNEDITOR_LANG[lg] || SUNEDITOR_LANG.fr || SUNEDITOR_LANG.en;
         }
 
+        function getLabels(language) {
+
+            var lg = (language || 'en').split('-')[0].toLowerCase();
+            return globalLabels[lg] || globalLabels['fr'];
+
+        }
         function getSunEditor(elem) {
 
             if (!elem.aasSunEditor) {
@@ -277,12 +321,18 @@ Aspectize.Extend('SunEditor', {
 
                 var cancelPlugin = getCancelPlugin(elem);
                 var imagePlugin = getImagePlugin(elem);
-                var plugins = [cancelPlugin, imagePlugin].concat(getBuiltInPlugins(buttonList, extraOptions));
+                var linkPlugin = getLinkPlugin(elem);
+                var plugins = [cancelPlugin, imagePlugin, linkPlugin].concat(getBuiltInPlugins(buttonList, extraOptions));
+
+                var language = Aspectize.UiExtensions.GetProperty(elem, 'Language');
+
+                var labels = getLabels(language);
+                lastLinkText = labels[2];
 
                 var config = {
                     plugins: plugins,
                     mode: Aspectize.UiExtensions.GetProperty(elem, 'Mode'), // classic, inline, balloon, balloon-always (+ ':bottom')
-                    lang: getLang(Aspectize.UiExtensions.GetProperty(elem, 'Language')),
+                    lang: getLang(language),
                     editableFrameAttributes: {
                         spellcheck: String(!!Aspectize.UiExtensions.GetProperty(elem, 'SpellCheck'))
                     },
@@ -297,8 +347,17 @@ Aspectize.Extend('SunEditor', {
                     defaultUrlProtocol: '',
                     // externalLibs: { katex: window.katex },  // goes with math button
                     //imageGallery: { data: "https://etyswjpn79.execute-api.ap-northeast-1.amazonaws.com/suneditor-demo" }, // goes with imageGallery button
+
                     tabDisable: false,
                     textDirection: 'ltr',
+                    statusbar_showPathLabel: false,
+                    wordCounter_label: labels[0],
+                    wordCounter: true,
+
+                    charCounter: true,
+                    //charCounter_max:100,
+                    charCounter_type: 'char',
+                    charCounter_label: labels[1],
 
                     events: {
                         onChange: function (e) { onChange(e.data); },
@@ -317,15 +376,6 @@ Aspectize.Extend('SunEditor', {
                 if (eMode) {
                     showEditor();
                 } else hideEditor(true);
-
-                //var input = elem.querySelector('input');
-                //if (input) input.style.display = 'none';
-                // v3 toolbar has its own inputs (fontSize): only hide inputs that are not part of the editor
-                //var inputs = elem.querySelectorAll('input');
-                //for (var n = 0; n < inputs.length; n++) {
-                //    var input = inputs[n];
-                //    if (!input.closest('.sun-editor')) input.style.display = 'none';
-                //}
             }
 
             return elem.aasSunEditor;
@@ -448,12 +498,20 @@ Aspectize.Extend('SunEditor', {
 
         };
 
+        elem.aasControlInfo.SetCustomImageUrl = function (e, url) {
+
+            setCustomImageUrl(url);
+        };
+
+        elem.aasControlInfo.SetCustomLinkUrl = function (e, url, text) {
+
+            setCustomLinkUrl(url, lastSelectedText || text || lastLinkText || url);
+        };
         Aspectize.UiExtensions.AddMergedPropertyChangeObserver(elem, function (sender, arg) {
 
             var options = null;
             var eMode = null;
             var html = null;
-            var customImageUrl = null;
             for (var key in arg) {
 
                 var value = arg[key];
@@ -461,7 +519,6 @@ Aspectize.Extend('SunEditor', {
 
                     case 'Value': html = value; break;
                     case 'EditMode': eMode = value; break;
-                    case 'CustomImageUrl': customImageUrl = value; break;
 
                     case 'Mode':
                     case 'Placeholder':
@@ -478,8 +535,6 @@ Aspectize.Extend('SunEditor', {
                         break;
                 }
             }
-
-            if (customImageUrl) setCustomImageUrl(customImageUrl);
 
             if (options) setOptions(options);
 

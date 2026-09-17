@@ -259,7 +259,9 @@ Aspectize.Extend('SunEditor', {
 
                         if (files.length === 1) {
 
-                            var obj = { File: files[0], Url: null };
+                            if ((maxSize > 0) && (files[0].size > maxSize)) Aspectize.Throw('File to large !', 1000);
+
+                            var obj = { File: files[0]};
                             Aspectize.UiExtensions.Notify(elem, 'OnCustomImage', obj);
                         }
                     });
@@ -282,7 +284,7 @@ Aspectize.Extend('SunEditor', {
 
                         if (files.length === 1) {
 
-                            var obj = { File: files[0], Url: null };
+                            var obj = { File: files[0]};
                             lastLinkText = files[0].name;
                             Aspectize.UiExtensions.Notify(elem, 'OnCustomLink', obj);
                         }

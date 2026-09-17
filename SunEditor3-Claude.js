@@ -23,10 +23,10 @@ Aspectize.Extend('SunEditor', {
         EditMode: true, Value: '', Mode: 'classic', Language: 'fr', Placeholder: '',
         SpellCheck: false, CloseOnSaveOrCancel: true,
         MaxImageSize: 300000,
-        FontColors: 'black, white, red, blue, green;navy, orange,yellow',
+        FontColors: '',
         Fonts: '',
         Options: '', // JSON, merged into the SunEditor config (experiments / rarely used options)
-        Buttons: 'undo,redo;removeFormat,copyFormat;finder;bold,italic,underline,strike;subscript,superscript;font,fontSize,blockStyle,fontColor,backgroundColor,textStyle;outdent,indent;align,hr,list_bulleted,list_numbered,lineHeight;table,Link,link,Image;image; showBlocks,codeView,print;paragraphStyle,blockquote;save, Cancel'
+        Buttons: 'undo,redo;removeFormat,copyFormat;finder;bold,italic,underline,strike;subscript,superscript;font,fontSize,blockStyle,fontColor,backgroundColor,textStyle;outdent,indent;align,hr,list_bulleted,list_numbered,lineHeight;table,Link,link,Image;image; showBlocks,codeView,print;paragraphStyle,blockquote;preview, save, Cancel'
         /*, Math: false */
     },
     Events: ['OnEditModeChanged', 'OnSave', 'OnCancel', 'OnStartEditing', 'OnCustomImage', 'OnCustomLink'],
@@ -144,13 +144,18 @@ Aspectize.Extend('SunEditor', {
         // v3: color list is flat, rows are given by splitNum
         function getColorOptions(sColors) {
 
-            var rows = getItemLists(sColors);
-            var items = [];
-            for (var n = 0; n < rows.length; n++) {
-                items = items.concat(rows[n]);
+            var colorOptions = {};
+            if (sColors) {
+                var rows = getItemLists(sColors);
+                var items = [];
+                for (var n = 0; n < rows.length; n++) {
+                    items = items.concat(rows[n]);
+                }
+                colorOptions.items = items;
+                colorOptions.splitNum = rows[0].length;
             }
 
-            return { items: items, splitNum: rows[0].length };
+            return colorOptions;
         }
 
         function getFontOptions(sFonts) {
@@ -348,6 +353,9 @@ Aspectize.Extend('SunEditor', {
                     // externalLibs: { katex: window.katex },  // goes with math button
                     //imageGallery: { data: "https://etyswjpn79.execute-api.ap-northeast-1.amazonaws.com/suneditor-demo" }, // goes with imageGallery button
 
+                    autoLinkify: true,
+                    link: { openNewWindow: true },
+
                     tabDisable: false,
                     textDirection: 'ltr',
                     statusbar_showPathLabel: false,
@@ -361,6 +369,16 @@ Aspectize.Extend('SunEditor', {
 
                     events: {
                         onChange: function (e) { onChange(e.data); },
+                        onPaste: function (e) {
+
+                            var div = document.createElement('div');
+                            div.innerHTML = e.data;
+
+                            var links = div.querySelectorAll('a[href]');
+                            for (var n = 0; n < links.length; n++) links[n].target = '_blank';
+
+                            return div.innerHTML;
+                        },
                         onSave: function (e) {
                             Aspectize.UiExtensions.Notify(elem, 'OnSave', '');
                             if (Aspectize.UiExtensions.GetProperty(elem, 'CloseOnSaveOrCancel')) hideEditor(false);

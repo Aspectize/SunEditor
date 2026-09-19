@@ -338,6 +338,10 @@ Aspectize.Extend('SunEditor', {
                     charCounter_label: labels.chars,
                     //charCounter_max: 100,
 
+                    shortcuts: {
+                        undo: ['c+KeyZ', 'Z', 'c+KeyW', 'Z'],
+                        redo: ['c+KeyY', 'Y', 'c+s+KeyZ', 'Z', 'c+s+KeyW', 'Z']
+                    },
                     events: {
                         onChange: function (e) { onChange(e.data); },
                         onPaste: function (e) {
